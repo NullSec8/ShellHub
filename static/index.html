@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>ShellHub</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm/css/xterm.min.css">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'Segoe UI', sans-serif; background: #0d1117; color: #c9d1d9; height: 100vh; display: flex; flex-direction: column; }
+header { background: #161b22; padding: 12px 20px; border-bottom: 1px solid #30363d; display: flex; align-items: center; gap: 12px; }
+header h1 { color: #00ff00; font-size: 20px; }
+header span { color: #8b949e; font-size: 13px; }
+#status { margin-left: auto; font-size: 12px; color: #8b949e; display: flex; align-items: center; gap: 8px; }
+#status .dot { width: 8px; height: 8px; border-radius: 50%; }
+#status .dot.online { background: #00ff00; }
+#status .dot.offline { background: #ff0000; }
+#status a { color: #58a6ff; text-decoration: none; font-size: 12px; }
+#status a:hover { text-decoration: underline; }
+.container { display: flex; flex: 1; overflow: hidden; }
+.sidebar { width: 300px; background: #161b22; border-right: 1px solid #30363d; display: flex; flex-direction: column; }
+.sidebar h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 1px; padding: 10px 16px; color: #8b949e; border-bottom: 1px solid #30363d; }
+#session-list { list-style: none; overflow-y: auto; max-height: 40%; }
+#session-list li { padding: 8px 16px; border-bottom: 1px solid #21262d; cursor: pointer; transition: background 0.2s; }
+#session-list li:hover { background: #1c2128; }
+#session-list li.active { background: #1f2937; border-left: 3px solid #00ff00; }
+#session-list li .name { font-weight: 600; font-size: 14px; }
+#session-list li .name-input { background: #0d1117; border: 1px solid #30363d; color: #c9d1d9; padding: 2px 6px; font-size: 13px; border-radius: 3px; width: 100%; }
+#session-list li .addr { font-size: 11px; color: #8b949e; margin-top: 2px; }
+#session-list li .badge { display: inline-block; font-size: 10px; padding: 1px 5px; border-radius: 8px; background: #00aa00; color: #000; }
+.sidebar-panel { padding: 12px 16px; border-top: 1px solid #30363d; flex: 1; display: flex; flex-direction: column; }
+.sidebar-panel label { font-size: 11px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+.sidebar-panel textarea, .sidebar-panel input { background: #0d1117; border: 1px solid #30363d; color: #c9d1d9; padding: 8px; border-radius: 4px; font-size: 13px; font-family: inherit; resize: vertical; }
+.sidebar-panel textarea { flex: 1; min-height: 60px; }
+.sidebar-panel input { margin-bottom: 8px; }
+.main { flex: 1; display: flex; flex-direction: column; }
+#placeholder { flex: 1; display: flex; align-items: center; justify-content: center; color: #484f58; font-size: 18px; text-align: center; }
+#placeholder p { max-width: 400px; }
+#placeholder .key { background: #21262d; padding: 2px 8px; border-radius: 4px; font-family: monospace; }
+#terminal-box { flex: 1; display: none; flex-direction: column; }
+#terminal-box .bar { background: #161b22; padding: 6px 16px; font-size: 12px; color: #8b949e; border-bottom: 1px solid #30363d; display: flex; gap: 16px; flex-wrap: wrap; }
+#terminal-box .bar strong { color: #c9d1d9; }
+#terminal { flex: 1; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>ShellHub</h1>
+  <span>session manager</span>
+  <div id="status">
+    <span class="dot offline" id="dot"></span>
+    <span id="statustxt">disconnected</span>
+    <a href="/cheatsheet" target="_blank">cheatsheet</a>
+  </div>
+</header>
+
+<div class="container">
+  <div class="sidebar">
+    <h2>Sessions</h2>
+    <ul id="session-list"></ul>
+
+    <div class="sidebar-panel" id="meta-panel" style="display:none;">
+      <label>Flags Captured</label>
+      <input id="flag-input" placeholder="e.g. THM{flag1}, THM{flag2}">
+      <label>Notes</label>
+      <textarea id="notes-input" placeholder="Observations, steps, credentials..."></textarea>
+    </div>
+  </div>
+
+  <div class="main">
+    <div id="placeholder">
+      <p>Select a session from the sidebar<br>or wait for an incoming connection on <span class="key">port 4444</span></p>
+    </div>
+    <div id="terminal-box">
+      <div class="bar">
+        <span><strong>Session:</strong> <span id="current-session-label">-</span></span>
+        <span><strong>Addr:</strong> <span id="current-addr-label">-</span></span>
+      </div>
+      <div id="terminal"></div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/xterm/lib/xterm.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit/lib/xterm-addon-fit.min.js"></script>
+<script>
+const termEl = document.getElementById('terminal');
+const placeholder = document.getElementById('placeholder');
+const terminalBox = document.getElementById('terminal-box');
+const sessionList = document.getElementById('session-list');
+const currentLabel = document.getElementById('current-session-label');
+const currentAddr = document.getElementById('current-addr-label');
+const dot = document.getElementById('dot');
+const statustxt = document.getElementById('statustxt');
+const metaPanel = document.getElementById('meta-panel');
+const flagInput = document.getElementById('flag-input');
+const notesInput = document.getElementById('notes-input');
+
+let ws = null;
+let currentSession = null;
+let term = null;
+let fitAddon = null;
+let sessions = {};
+let metaDirty = {};
+
+function connect() {
+  dot.className = 'dot offline';
+  statustxt.textContent = 'connecting...';
+  ws = new WebSocket(`ws://${location.host}/ws`);
+
+  ws.onopen = () => {
+    dot.className = 'dot online';
+    statustxt.textContent = 'connected';
+  };
+
+  ws.onclose = () => {
+    dot.className = 'dot offline';
+    statustxt.textContent = 'disconnected (reconnecting in 3s)';
+    setTimeout(connect, 3000);
+  };
+
+  ws.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    handleMessage(msg);
+  };
+}
+
+function handleMessage(msg) {
+  if (msg.type === 'sessions') {
+    renderSessionList(msg.list);
+  } else if (msg.type === 'output') {
+    if (term && currentSession === msg.session_id) {
+      term.write(msg.data);
+    }
+  } else if (msg.type === 'meta') {
+    if (currentSession === msg.session_id) {
+      flagInput.value = msg.flags || '';
+      notesInput.value = msg.notes || '';
+    }
+  }
+}
+
+function renderSessionList(list) {
+  sessionList.innerHTML = '';
+  sessions = {};
+  for (const s of list) {
+    sessions[s.id] = s;
+    const li = document.createElement('li');
+    li.dataset.id = s.id;
+    if (s.id === currentSession) li.className = 'active';
+
+    const displayName = s.name || s.addr;
+    const time = new Date(s.created * 1000).toLocaleTimeString();
+    li.innerHTML = `<div class="name">${escHtml(displayName)}</div>
+                    <div class="addr">${s.addr} &middot; ${time} ${s.flags ? '&middot; \ud83c\udfc6' + escHtml(s.flags) : ''}</div>`;
+
+    li.ondblclick = () => startRename(s.id, li);
+    li.onclick = () => selectSession(s.id);
+    sessionList.appendChild(li);
+  }
+}
+
+function startRename(sid, li) {
+  const s = sessions[sid];
+  const nameDiv = li.querySelector('.name');
+  const current = s.name || '';
+  const input = document.createElement('input');
+  input.className = 'name-input';
+  input.value = current;
+  input.autofocus = true;
+  nameDiv.replaceWith(input);
+  input.focus();
+  input.select();
+
+  const finish = () => {
+    const val = input.value.trim();
+    if (val && val !== (s.name || '')) {
+      s.name = val;
+      ws.send(JSON.stringify({type: 'rename', session_id: sid, data: val}));
+    }
+    renderSingleSession(sid);
+  };
+
+  input.onblur = finish;
+  input.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); input.blur(); } };
+}
+
+function renderSingleSession(sid) {
+  const li = sessionList.querySelector(`li[data-id="${sid}"]`);
+  if (!li) return;
+  const s = sessions[sid];
+  if (!s) return;
+  const displayName = s.name || s.addr;
+  const time = new Date(s.created * 1000).toLocaleTimeString();
+  li.innerHTML = `<div class="name">${escHtml(displayName)}</div>
+                  <div class="addr">${s.addr} &middot; ${time} ${s.flags ? '&middot; \ud83c\udfc6' + escHtml(s.flags) : ''}</div>`;
+  li.ondblclick = () => startRename(s.id, li);
+}
+
+function selectSession(sid) {
+  currentSession = sid;
+  document.querySelectorAll('#session-list li').forEach(el => {
+    el.className = el.dataset.id === sid ? 'active' : '';
+  });
+
+  const s = sessions[sid];
+  currentLabel.textContent = s ? (s.name || s.id) : sid;
+  currentAddr.textContent = s ? s.addr : '?';
+
+  placeholder.style.display = 'none';
+  terminalBox.style.display = 'flex';
+  metaPanel.style.display = 'flex';
+
+  if (!term) {
+    term = new Terminal({
+      cursorBlink: true,
+      cursorStyle: 'block',
+      fontSize: 14,
+      theme: { background: '#0d1117', foreground: '#c9d1d9', cursor: '#00ff00' }
+    });
+    fitAddon = new FitAddon.FitAddon();
+    term.loadAddon(fitAddon);
+    term.open(termEl);
+    fitAddon.fit();
+
+    term.onData(data => {
+      if (currentSession && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({type: 'input', session_id: currentSession, data: data}));
+      }
+    });
+  }
+
+  term.clear();
+  term.write(`\r\n\x1b[32m[*] Connected to session ${sid}\x1b[0m\r\n`);
+  ws.send(JSON.stringify({type: 'watch', session_id: sid}));
+}
+
+flagInput.addEventListener('input', () => {
+  if (currentSession) {
+    ws.send(JSON.stringify({type: 'flag', session_id: currentSession, data: flagInput.value}));
+    if (sessions[currentSession]) sessions[currentSession].flags = flagInput.value;
+    renderSingleSession(currentSession);
+  }
+});
+
+notesInput.addEventListener('input', () => {
+  if (currentSession) {
+    ws.send(JSON.stringify({type: 'notes', session_id: currentSession, data: notesInput.value}));
+  }
+});
+
+function escHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+window.addEventListener('resize', () => {
+  if (fitAddon) fitAddon.fit();
+});
+
+connect();
+</script>
+</body>
+</html>

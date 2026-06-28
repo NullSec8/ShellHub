@@ -9,6 +9,7 @@ import uvicorn
 
 tcp_sessions = {}
 admin_connections = set()
+VALID_META_FIELDS = {"name", "notes", "flags"}
 
 def init_db():
     conn = sqlite3.connect("shellhub.db")
@@ -27,7 +28,7 @@ def init_db():
 
 def save_session(sid, addr, created):
     conn = sqlite3.connect("shellhub.db")
-    conn.execute("INSERT OR REPLACE INTO sessions (id, remote_addr, created_at, last_seen) VALUES (?, ?, ?, ?)",
+    conn.execute("INSERT OR IGNORE INTO sessions (id, remote_addr, created_at, last_seen) VALUES (?, ?, ?, ?)",
                  (sid, addr, created, time.time()))
     conn.commit()
     conn.close()
@@ -43,6 +44,8 @@ def get_session_meta(sid):
     return {"name": "", "notes": "", "flags": ""}
 
 def update_session_meta(sid, field, value):
+    if field not in VALID_META_FIELDS:
+        return
     conn = sqlite3.connect("shellhub.db")
     conn.execute(f"UPDATE sessions SET {field} = ?, last_seen = ? WHERE id = ?", (value, time.time(), sid))
     conn.commit()
@@ -88,7 +91,7 @@ async def handle_tcp(reader, writer):
     created = time.time()
 
     session = {"id": sid, "addr": addr_str, "reader": reader,
-               "writer": writer, "created": created, "buf": b""}
+               "writer": writer, "created": created}
     tcp_sessions[sid] = session
     save_session(sid, addr_str, created)
     await broadcast_sessions()
@@ -98,7 +101,6 @@ async def handle_tcp(reader, writer):
             data = await reader.read(4096)
             if not data:
                 break
-            session["buf"] += data
             text = data.decode("utf-8", errors="replace")
             save_command(sid, "output", text)
             for ws in admin_connections:
@@ -107,11 +109,16 @@ async def handle_tcp(reader, writer):
                         await ws.send_json({"type": "output", "session_id": sid, "data": text})
                     except:
                         pass
-    except:
+    except asyncio.CancelledError:
+        pass
+    except Exception:
         pass
     finally:
-        writer.close()
-        await writer.wait_closed()
+        try:
+            writer.close()
+            await writer.wait_closed()
+        except:
+            pass
         tcp_sessions.pop(sid, None)
         await broadcast_sessions()
 
@@ -144,28 +151,34 @@ async def ws_endpoint(ws: WebSocket):
 
     try:
         while True:
-            msg = await ws.receive_json()
-            if msg["type"] == "watch":
-                ws.watching = msg["session_id"]
-                history = get_history(msg["session_id"])
-                meta = get_session_meta(msg["session_id"])
-                await ws.send_json({"type": "meta", "session_id": msg["session_id"], **meta})
-                for typ, data in history:
-                    await ws.send_json({"type": typ, "session_id": msg["session_id"], "data": data})
-            elif msg["type"] == "rename":
-                update_session_meta(msg["session_id"], "name", msg["data"])
+            raw = await ws.receive_json()
+            msg = raw if isinstance(raw, dict) else {}
+            t = msg.get("type")
+
+            if t == "watch":
+                sid = msg.get("session_id")
+                ws.watching = sid
+                if sid:
+                    meta = get_session_meta(sid)
+                    await ws.send_json({"type": "meta", "session_id": sid, **meta})
+                    for typ, data in get_history(sid):
+                        await ws.send_json({"type": "history_line", "session_id": sid, "data_type": typ, "data": data})
+            elif t == "rename":
+                update_session_meta(msg.get("session_id"), "name", msg.get("data", ""))
                 await broadcast_sessions()
-            elif msg["type"] == "notes":
-                update_session_meta(msg["session_id"], "notes", msg["data"])
-            elif msg["type"] == "flag":
-                update_session_meta(msg["session_id"], "flags", msg["data"])
-            elif msg["type"] == "input":
-                s = tcp_sessions.get(msg["session_id"])
+            elif t == "notes":
+                update_session_meta(msg.get("session_id"), "notes", msg.get("data", ""))
+            elif t == "flag":
+                update_session_meta(msg.get("session_id"), "flags", msg.get("data", ""))
+            elif t == "input":
+                s = tcp_sessions.get(msg.get("session_id"))
                 if s:
-                    data = msg["data"].replace("\r", "\n")
+                    data = msg.get("data", "").replace("\r", "\n")
                     s["writer"].write(data.encode())
                     await s["writer"].drain()
-    except WebSocketDisconnect:
+    except (WebSocketDisconnect, asyncio.CancelledError):
+        pass
+    except Exception:
         pass
     finally:
         admin_connections.discard(ws)

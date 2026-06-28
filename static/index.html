@@ -7,6 +7,7 @@
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { font-family: 'Segoe UI', sans-serif; background: #0d1117; color: #c9d1d9; height: 100vh; display: flex; flex-direction: column; }
+button { font-family: inherit; cursor: pointer; }
 header { background: #161b22; padding: 12px 20px; border-bottom: 1px solid #30363d; display: flex; align-items: center; gap: 12px; }
 header h1 { color: #00ff00; font-size: 20px; }
 header span { color: #8b949e; font-size: 13px; }
@@ -75,6 +76,9 @@ header span { color: #8b949e; font-size: 13px; }
       <div class="bar">
         <span><strong>Session:</strong> <span id="current-session-label">-</span></span>
         <span><strong>Addr:</strong> <span id="current-addr-label">-</span></span>
+        <span style="margin-left:auto;display:flex;align-items:center;gap:6px;">
+          <button id="raw-toggle" style="background:#21262d;border:1px solid #30363d;color:#8b949e;padding:2px 10px;border-radius:4px;font-size:11px;">Raw Mode OFF</button>
+        </span>
       </div>
       <div id="terminal"></div>
     </div>
@@ -229,6 +233,10 @@ function renderSingleSession(sid) {
 function selectSession(sid) {
   if (currentSession === sid) return;
   currentSession = sid;
+  rawMode = false;
+  rawToggle.textContent = 'Raw Mode OFF';
+  rawToggle.style.color = '#8b949e';
+  rawToggle.style.borderColor = '#30363d';
 
   document.querySelectorAll('#session-list li').forEach(el => {
     el.className = el.dataset.id === sid ? 'active' : '';
@@ -298,6 +306,18 @@ function escHtml(s) {
   d.textContent = s;
   return d.innerHTML;
 }
+
+const rawToggle = document.getElementById('raw-toggle');
+let rawMode = false;
+rawToggle.addEventListener('click', () => {
+  rawMode = !rawMode;
+  rawToggle.textContent = rawMode ? 'Raw Mode ON' : 'Raw Mode OFF';
+  rawToggle.style.color = rawMode ? '#00ff00' : '#8b949e';
+  rawToggle.style.borderColor = rawMode ? '#00ff00' : '#30363d';
+  if (currentSession && ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({type: 'raw_mode', session_id: currentSession, data: rawMode}));
+  }
+});
 
 window.addEventListener('resize', () => {
   if (fitAddon) fitAddon.fit();

@@ -91,7 +91,7 @@ async def handle_tcp(reader, writer):
     created = time.time()
 
     session = {"id": sid, "addr": addr_str, "reader": reader,
-               "writer": writer, "created": created}
+               "writer": writer, "created": created, "raw_mode": False}
     tcp_sessions[sid] = session
     save_session(sid, addr_str, created)
     await broadcast_sessions()
@@ -173,9 +173,15 @@ async def ws_endpoint(ws: WebSocket):
             elif t == "input":
                 s = tcp_sessions.get(msg.get("session_id"))
                 if s:
-                    data = msg.get("data", "").replace("\r", "\n")
+                    data = msg.get("data", "")
+                    if not s["raw_mode"]:
+                        data = data.replace("\r", "\n")
                     s["writer"].write(data.encode())
                     await s["writer"].drain()
+            elif t == "raw_mode":
+                s = tcp_sessions.get(msg.get("session_id"))
+                if s:
+                    s["raw_mode"] = msg.get("data", False)
     except (WebSocketDisconnect, asyncio.CancelledError):
         pass
     except Exception:

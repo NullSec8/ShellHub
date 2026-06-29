@@ -15,7 +15,6 @@ log = logging.getLogger("shellhub")
 
 tcp_sessions = {}
 admin_connections = set()
-VALID_META_FIELDS = {"name", "notes", "flags"}
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "shellhub.db")
 CFG_HOST = os.environ.get("SHELLHUB_HOST", "0.0.0.0")
@@ -32,13 +31,12 @@ def clean_output(text):
 
 def init_db():
     with sqlite3.connect(DB_PATH) as conn:
-        c = conn.cursor()
-        c.execute("""CREATE TABLE IF NOT EXISTS sessions (
+        conn.execute("""CREATE TABLE IF NOT EXISTS sessions (
             id TEXT PRIMARY KEY, remote_addr TEXT, name TEXT DEFAULT '',
             notes TEXT DEFAULT '', flags TEXT DEFAULT '',
             created_at REAL, last_seen REAL
         )""")
-        c.execute("""CREATE TABLE IF NOT EXISTS commands (
+        conn.execute("""CREATE TABLE IF NOT EXISTS commands (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             session_id TEXT, type TEXT, data TEXT, timestamp REAL
         )""")
@@ -55,11 +53,23 @@ def get_session_meta(sid):
         return {"name": row[0] or "", "notes": row[1] or "", "flags": row[2] or ""}
     return {"name": "", "notes": "", "flags": ""}
 
+META_COLUMNS = {
+    "name": "name",
+    "notes": "notes",
+    "flags": "flags",
+}
+
+META_MAXLEN = {"name": 100, "notes": 2000, "flags": 500}
+
 def update_session_meta(sid, field, value):
-    if field not in VALID_META_FIELDS:
+    column = META_COLUMNS.get(field)
+    if column is None:
         return
+    maxlen = META_MAXLEN.get(field, 500)
+    if isinstance(value, str):
+        value = value[:maxlen]
     with sqlite3.connect(DB_PATH) as conn:
-        conn.execute(f"UPDATE sessions SET {field} = ?, last_seen = ? WHERE id = ?", (value, time.time(), sid))
+        conn.execute(f"UPDATE sessions SET {column} = ?, last_seen = ? WHERE id = ?", (value, time.time(), sid))
 
 def save_command(sid, typ, data):
     with sqlite3.connect(DB_PATH) as conn:
@@ -173,9 +183,6 @@ async def ws_endpoint(ws: WebSocket):
                 sid = msg.get("session_id")
                 ws.watching = sid
                 if sid:
-                    s = tcp_sessions.get(sid)
-                    if s and not msg.get("preserve_raw"):
-                        s["raw_mode"] = False
                     meta = get_session_meta(sid)
                     await ws.send_json({"type": "meta", "session_id": sid, **meta})
                     for typ, data in get_history(sid):

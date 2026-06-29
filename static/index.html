@@ -288,7 +288,7 @@ function selectSession(sid) {
   term.clear();
   term.write(`\r\n\x1b[32m[*] Connected to session ${sid}\x1b[0m\r\n`);
   if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({type: 'watch', session_id: sid}));
+    ws.send(JSON.stringify({type: 'watch', session_id: sid, preserve_raw: true}));
   }
 }
 

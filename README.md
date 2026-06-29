@@ -14,18 +14,18 @@
 
 ---
 
-## ✨ Features
+## Features
 
 | Feature | Description |
 |---------|-------------|
-| 🌐 **Web Dashboard** | All sessions in one browser UI with live online/offline status |
-| 🖥️ **In-Browser Terminal** | Full xterm.js terminal — send commands, see output live |
-| ⚡ **Raw Mode** | Toggle for PTY-spawned shells — proper arrow keys, tab completion, Ctrl+C |
-| 💾 **Session History** | All output saved to SQLite — persists across restarts |
-| ✏️ **Session Naming** | Double-click to rename sessions (e.g., `THM Pickle Rick`) |
-| 📝 **Notes & Flags** | Attach notes and captured flags per session, synced across browser tabs |
-| 📖 **Cheat Sheet** | Built-in reference for payloads, commands, post-exploitation |
-| 🪶 **Lightweight** | Single Python file, no DB setup, minimal dependencies |
+| **Web Dashboard** | All sessions in one browser UI with live online/offline status |
+| **In-Browser Terminal** | Full xterm.js terminal — send commands, see output live |
+| **Raw Mode** | Toggle for PTY-spawned shells — proper arrow keys, tab completion, Ctrl+C |
+| **Session History** | All output saved to SQLite — persists across restarts |
+| **Session Naming** | Double-click to rename sessions (e.g., `THM Pickle Rick`) |
+| **Notes & Flags** | Attach notes and captured flags per session, synced across browser tabs |
+| **Cheat Sheet** | Built-in reference for payloads, commands, post-exploitation |
+| **Lightweight** | Single Python file, no DB setup, minimal dependencies |
 
 ---
 
@@ -42,7 +42,7 @@ Open **[http://localhost:8080](http://localhost:8080)**.
 
 ---
 
-## 🎯 Usage
+## Usage
 
 ### Basic workflow
 
@@ -83,7 +83,7 @@ nc localhost 4444
 
 ---
 
-## ⚙️ Configuration
+## Configuration
 
 Set environment variables to customize ports:
 
@@ -100,7 +100,7 @@ SHELLHUB_PORT=9090 SHELLHUB_TCP_PORT=5555 python shellhub.py
 
 ---
 
-## 📖 Cheat Sheet
+## Cheat Sheet
 
 Built-in at [`/cheatsheet`](http://localhost:8080/cheatsheet) — includes:
 - MSFVenom payloads for all platforms
@@ -118,6 +118,6 @@ Built-in at [`/cheatsheet`](http://localhost:8080/cheatsheet) — includes:
 
 ---
 
-## 📄 License
+## License
 
 [MIT](LICENSE)

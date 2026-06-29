@@ -101,6 +101,7 @@ const flagInput = document.getElementById('flag-input');
 const notesInput = document.getElementById('notes-input');
 
 let ws = null;
+let wsId = 0;
 let currentSession = null;
 let term = null;
 let fitAddon = null;
@@ -108,25 +109,31 @@ let sessions = {};
 let clickTimer = null;
 
 function connect() {
+  const id = ++wsId;
   dot.className = 'dot offline';
   statustxt.textContent = 'connecting...';
-  ws = new WebSocket(`ws://${location.host}/ws`);
+  const newWs = new WebSocket(`ws://${location.host}/ws`);
+  ws = newWs;
 
-  ws.onopen = () => {
+  newWs.onopen = () => {
+    if (id !== wsId) return;
     dot.className = 'dot online';
     statustxt.textContent = 'connected';
     if (currentSession) {
-      ws.send(JSON.stringify({type: 'watch', session_id: currentSession}));
+      if (term) term.clear();
+      newWs.send(JSON.stringify({type: 'watch', session_id: currentSession}));
     }
   };
 
-  ws.onclose = () => {
+  newWs.onclose = () => {
+    if (id !== wsId) return;
     dot.className = 'dot offline';
     statustxt.textContent = 'disconnected (reconnecting in 3s)';
     setTimeout(connect, 3000);
   };
 
-  ws.onmessage = (e) => {
+  newWs.onmessage = (e) => {
+    if (id !== wsId) return;
     try {
       const msg = JSON.parse(e.data);
       handleMessage(msg);
@@ -231,7 +238,6 @@ function renderSingleSession(sid) {
 }
 
 function selectSession(sid) {
-  if (currentSession === sid) return;
   currentSession = sid;
   rawMode = false;
   rawToggle.textContent = 'Raw Mode OFF';
@@ -255,6 +261,7 @@ function selectSession(sid) {
       cursorBlink: true,
       cursorStyle: 'block',
       fontSize: 14,
+      scrollback: 5000,
       theme: { background: '#0d1117', foreground: '#c9d1d9', cursor: '#00ff00' }
     });
     fitAddon = new FitAddon.FitAddon();

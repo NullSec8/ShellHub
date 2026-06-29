@@ -12,33 +12,26 @@ admin_connections = set()
 VALID_META_FIELDS = {"name", "notes", "flags"}
 
 def init_db():
-    conn = sqlite3.connect("shellhub.db")
-    c = conn.cursor()
-    c.execute("""CREATE TABLE IF NOT EXISTS sessions (
-        id TEXT PRIMARY KEY, remote_addr TEXT, name TEXT DEFAULT '',
-        notes TEXT DEFAULT '', flags TEXT DEFAULT '',
-        created_at REAL, last_seen REAL
-    )""")
-    c.execute("""CREATE TABLE IF NOT EXISTS commands (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        session_id TEXT, type TEXT, data TEXT, timestamp REAL
-    )""")
-    conn.commit()
-    conn.close()
+    with sqlite3.connect("shellhub.db") as conn:
+        c = conn.cursor()
+        c.execute("""CREATE TABLE IF NOT EXISTS sessions (
+            id TEXT PRIMARY KEY, remote_addr TEXT, name TEXT DEFAULT '',
+            notes TEXT DEFAULT '', flags TEXT DEFAULT '',
+            created_at REAL, last_seen REAL
+        )""")
+        c.execute("""CREATE TABLE IF NOT EXISTS commands (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT, type TEXT, data TEXT, timestamp REAL
+        )""")
 
 def save_session(sid, addr, created):
-    conn = sqlite3.connect("shellhub.db")
-    conn.execute("INSERT OR IGNORE INTO sessions (id, remote_addr, created_at, last_seen) VALUES (?, ?, ?, ?)",
-                 (sid, addr, created, time.time()))
-    conn.commit()
-    conn.close()
+    with sqlite3.connect("shellhub.db") as conn:
+        conn.execute("INSERT INTO sessions (id, remote_addr, created_at, last_seen) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET last_seen = excluded.last_seen",
+                     (sid, addr, created, time.time()))
 
 def get_session_meta(sid):
-    conn = sqlite3.connect("shellhub.db")
-    c = conn.cursor()
-    c.execute("SELECT name, notes, flags FROM sessions WHERE id = ?", (sid,))
-    row = c.fetchone()
-    conn.close()
+    with sqlite3.connect("shellhub.db") as conn:
+        row = conn.execute("SELECT name, notes, flags FROM sessions WHERE id = ?", (sid,)).fetchone()
     if row:
         return {"name": row[0] or "", "notes": row[1] or "", "flags": row[2] or ""}
     return {"name": "", "notes": "", "flags": ""}
@@ -46,24 +39,17 @@ def get_session_meta(sid):
 def update_session_meta(sid, field, value):
     if field not in VALID_META_FIELDS:
         return
-    conn = sqlite3.connect("shellhub.db")
-    conn.execute(f"UPDATE sessions SET {field} = ?, last_seen = ? WHERE id = ?", (value, time.time(), sid))
-    conn.commit()
-    conn.close()
+    with sqlite3.connect("shellhub.db") as conn:
+        conn.execute(f"UPDATE sessions SET {field} = ?, last_seen = ? WHERE id = ?", (value, time.time(), sid))
 
 def save_command(sid, typ, data):
-    conn = sqlite3.connect("shellhub.db")
-    conn.execute("INSERT INTO commands (session_id, type, data, timestamp) VALUES (?, ?, ?, ?)",
-                 (sid, typ, data, time.time()))
-    conn.commit()
-    conn.close()
+    with sqlite3.connect("shellhub.db") as conn:
+        conn.execute("INSERT INTO commands (session_id, type, data, timestamp) VALUES (?, ?, ?, ?)",
+                     (sid, typ, data, time.time()))
 
 def get_history(sid):
-    conn = sqlite3.connect("shellhub.db")
-    c = conn.cursor()
-    c.execute("SELECT type, data FROM commands WHERE session_id = ? ORDER BY id", (sid,))
-    rows = c.fetchall()
-    conn.close()
+    with sqlite3.connect("shellhub.db") as conn:
+        rows = conn.execute("SELECT type, data FROM commands WHERE session_id = ? ORDER BY id", (sid,)).fetchall()
     return rows
 
 async def broadcast_sessions():
@@ -168,8 +154,10 @@ async def ws_endpoint(ws: WebSocket):
                 await broadcast_sessions()
             elif t == "notes":
                 update_session_meta(msg.get("session_id"), "notes", msg.get("data", ""))
+                await broadcast_sessions()
             elif t == "flag":
                 update_session_meta(msg.get("session_id"), "flags", msg.get("data", ""))
+                await broadcast_sessions()
             elif t == "input":
                 s = tcp_sessions.get(msg.get("session_id"))
                 if s:

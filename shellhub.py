@@ -49,7 +49,7 @@ def save_command(sid, typ, data):
 
 def get_history(sid):
     with sqlite3.connect("shellhub.db") as conn:
-        rows = conn.execute("SELECT type, data FROM commands WHERE session_id = ? ORDER BY id", (sid,)).fetchall()
+        rows = conn.execute("SELECT type, data FROM commands WHERE session_id = ? ORDER BY id LIMIT 50000", (sid,)).fetchall()
     return rows
 
 async def broadcast_sessions():
@@ -62,10 +62,10 @@ async def broadcast_sessions():
             "created": s["created"], "active": True
         })
     dead = []
-    for ws in admin_connections:
+    for ws in list(admin_connections):
         try:
             await ws.send_json({"type": "sessions", "list": slist})
-        except:
+        except Exception:
             dead.append(ws)
     for ws in dead:
         admin_connections.discard(ws)
@@ -89,11 +89,11 @@ async def handle_tcp(reader, writer):
                 break
             text = data.decode("utf-8", errors="replace")
             save_command(sid, "output", text)
-            for ws in admin_connections:
+            for ws in list(admin_connections):
                 if getattr(ws, "watching", None) == sid:
                     try:
                         await ws.send_json({"type": "output", "session_id": sid, "data": text})
-                    except:
+                    except Exception:
                         pass
     except asyncio.CancelledError:
         pass
@@ -103,7 +103,7 @@ async def handle_tcp(reader, writer):
         try:
             writer.close()
             await writer.wait_closed()
-        except:
+        except Exception:
             pass
         tcp_sessions.pop(sid, None)
         await broadcast_sessions()
@@ -145,6 +145,9 @@ async def ws_endpoint(ws: WebSocket):
                 sid = msg.get("session_id")
                 ws.watching = sid
                 if sid:
+                    s = tcp_sessions.get(sid)
+                    if s:
+                        s["raw_mode"] = False
                     meta = get_session_meta(sid)
                     await ws.send_json({"type": "meta", "session_id": sid, **meta})
                     for typ, data in get_history(sid):
@@ -158,6 +161,10 @@ async def ws_endpoint(ws: WebSocket):
             elif t == "flag":
                 update_session_meta(msg.get("session_id"), "flags", msg.get("data", ""))
                 await broadcast_sessions()
+            elif t == "raw_mode":
+                s = tcp_sessions.get(msg.get("session_id"))
+                if s:
+                    s["raw_mode"] = msg.get("data", False)
             elif t == "input":
                 s = tcp_sessions.get(msg.get("session_id"))
                 if s:
@@ -166,10 +173,6 @@ async def ws_endpoint(ws: WebSocket):
                         data = data.replace("\r", "\n")
                     s["writer"].write(data.encode())
                     await s["writer"].drain()
-            elif t == "raw_mode":
-                s = tcp_sessions.get(msg.get("session_id"))
-                if s:
-                    s["raw_mode"] = msg.get("data", False)
     except (WebSocketDisconnect, asyncio.CancelledError):
         pass
     except Exception:

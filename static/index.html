@@ -107,8 +107,12 @@ let term = null;
 let fitAddon = null;
 let sessions = {};
 let clickTimer = null;
+let pageAlive = true;
+
+window.addEventListener('beforeunload', () => { pageAlive = false; });
 
 function connect() {
+  if (!pageAlive) return;
   const id = ++wsId;
   dot.className = 'dot offline';
   statustxt.textContent = 'connecting...';
@@ -116,20 +120,22 @@ function connect() {
   ws = newWs;
 
   newWs.onopen = () => {
-    if (id !== wsId) return;
+    if (id !== wsId || !pageAlive) return;
     dot.className = 'dot online';
     statustxt.textContent = 'connected';
   };
 
   newWs.onclose = () => {
-    if (id !== wsId) return;
+    if (id !== wsId || !pageAlive) return;
     dot.className = 'dot offline';
     statustxt.textContent = 'disconnected (reconnecting in 3s)';
-    setTimeout(connect, 3000);
+    setTimeout(() => connect(), 3000);
   };
 
+  newWs.onerror = () => {};
+
   newWs.onmessage = (e) => {
-    if (id !== wsId) return;
+    if (id !== wsId || !pageAlive) return;
     try {
       const msg = JSON.parse(e.data);
       handleMessage(msg);
@@ -267,7 +273,7 @@ function selectSession(sid) {
 
     term.onData(data => {
       if (currentSession && ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({type: 'input', session_id: currentSession, data: data}));
+        try { ws.send(JSON.stringify({type: 'input', session_id: currentSession, data: data})); } catch {}
       }
     });
   }

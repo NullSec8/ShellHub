@@ -124,6 +124,9 @@ function connect() {
     if (id !== wsId || !pageAlive) return;
     dot.className = 'dot online';
     statustxt.textContent = 'connected';
+    if (currentSession) {
+      newWs.send(JSON.stringify({type: 'watch', session_id: currentSession, preserve_raw: true}));
+    }
   };
 
   newWs.onclose = () => {

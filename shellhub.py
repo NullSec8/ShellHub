@@ -1,4 +1,6 @@
 import asyncio
+import logging
+import os
 import re
 import sqlite3
 import time
@@ -8,9 +10,13 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 import uvicorn
 
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+log = logging.getLogger("shellhub")
+
 tcp_sessions = {}
 admin_connections = set()
 VALID_META_FIELDS = {"name", "notes", "flags"}
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 NON_TTY_RE = re.compile(r"[\x00\x08\x0b\x0c\x0e-\x1f\x7f]")
 
@@ -63,7 +69,7 @@ def get_history(sid):
 
 async def broadcast_sessions():
     slist = []
-    for s in tcp_sessions.values():
+    for s in list(tcp_sessions.values()):
         meta = get_session_meta(s["id"])
         slist.append({
             "id": s["id"], "addr": s["addr"],
@@ -103,12 +109,12 @@ async def handle_tcp(reader, writer):
                 if getattr(ws, "watching", None) == sid:
                     try:
                         await ws.send_json({"type": "output", "session_id": sid, "data": text})
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        log.debug("ws send failed: %s", e)
     except asyncio.CancelledError:
         pass
-    except Exception:
-        pass
+    except Exception as e:
+        log.error("handle_tcp error (session %s): %s", sid, e)
     finally:
         try:
             writer.close()
@@ -136,7 +142,7 @@ async def ws_endpoint(ws: WebSocket):
     admin_connections.add(ws)
 
     slist = []
-    for s in tcp_sessions.values():
+    for s in list(tcp_sessions.values()):
         meta = get_session_meta(s["id"])
         slist.append({
             "id": s["id"], "addr": s["addr"],
@@ -156,12 +162,13 @@ async def ws_endpoint(ws: WebSocket):
                 ws.watching = sid
                 if sid:
                     s = tcp_sessions.get(sid)
-                    if s:
+                    if s and not msg.get("preserve_raw"):
                         s["raw_mode"] = False
                     meta = get_session_meta(sid)
                     await ws.send_json({"type": "meta", "session_id": sid, **meta})
                     for typ, data in get_history(sid):
-                        await ws.send_json({"type": "history_line", "session_id": sid, "data_type": typ, "data": data})
+                        cleaned = clean_output(data) if typ == "output" else data
+                        await ws.send_json({"type": "history_line", "session_id": sid, "data_type": typ, "data": cleaned})
             elif t == "rename":
                 update_session_meta(msg.get("session_id"), "name", msg.get("data", ""))
                 await broadcast_sessions()
@@ -192,18 +199,18 @@ async def ws_endpoint(ws: WebSocket):
                     await s["writer"].drain()
     except (WebSocketDisconnect, asyncio.CancelledError):
         pass
-    except Exception:
-        pass
+    except Exception as e:
+        log.error("ws_endpoint error: %s", e)
     finally:
         admin_connections.discard(ws)
 
 @app.get("/")
 async def index():
-    return FileResponse("static/index.html")
+    return FileResponse(os.path.join(BASE_DIR, "static", "index.html"))
 
 @app.get("/cheatsheet")
 async def cheatsheet():
-    return FileResponse("static/cheatsheet.html")
+    return FileResponse(os.path.join(BASE_DIR, "static", "cheatsheet.html"))
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8080)

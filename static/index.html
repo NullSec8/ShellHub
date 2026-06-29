@@ -117,7 +117,8 @@ function connect() {
   const id = ++wsId;
   dot.className = 'dot offline';
   statustxt.textContent = 'connecting...';
-  const newWs = new WebSocket(`ws://${location.host}/ws`);
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const newWs = new WebSocket(`${proto}//${location.host}/ws`);
   ws = newWs;
 
   newWs.onopen = () => {
@@ -236,11 +237,13 @@ function renderSingleSession(sid) {
   li.innerHTML = `<div class="name">${escHtml(displayName)}</div>
                   <div class="addr">${escHtml(s.addr)} &middot; ${time} ${s.flags ? '&middot; \ud83c\udfc6' + escHtml(s.flags) : ''}</div>`;
 
-  li.addEventListener('click', () => handleClick(s.id, li));
-  li.addEventListener('dblclick', () => {
+  li.onclick = null;
+  li.ondblclick = null;
+  li.onclick = () => handleClick(s.id, li);
+  li.ondblclick = () => {
     clearTimeout(clickTimer);
     startRename(s.id, li);
-  });
+  };
 }
 
 function selectSession(sid) {
@@ -284,7 +287,9 @@ function selectSession(sid) {
 
   term.clear();
   term.write(`\r\n\x1b[32m[*] Connected to session ${sid}\x1b[0m\r\n`);
-  ws.send(JSON.stringify({type: 'watch', session_id: sid}));
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({type: 'watch', session_id: sid}));
+  }
 }
 
 let flagTimeout = null;

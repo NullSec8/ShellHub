@@ -17,17 +17,21 @@ tcp_sessions = {}
 admin_connections = set()
 VALID_META_FIELDS = {"name", "notes", "flags"}
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_PATH = os.path.join(BASE_DIR, "shellhub.db")
+CFG_HOST = os.environ.get("SHELLHUB_HOST", "0.0.0.0")
+CFG_PORT = int(os.environ.get("SHELLHUB_PORT", "8080"))
+CFG_TCP_HOST = os.environ.get("SHELLHUB_TCP_HOST", "0.0.0.0")
+CFG_TCP_PORT = int(os.environ.get("SHELLHUB_TCP_PORT", "4444"))
 
-NON_TTY_RE = re.compile(r"[\x00\x08\x0b\x0c\x0e-\x1f\x7f]")
+CONTROL_RE = re.compile(r"[\x00\x07\x0b\x0c\x0e-\x1a\x1c-\x1f\x7f]")
 
 def clean_output(text):
     text = text.replace("\r\n", "\n")
-    text = text.replace("\r", "\n")
-    text = NON_TTY_RE.sub("", text)
+    text = CONTROL_RE.sub("", text)
     return text
 
 def init_db():
-    with sqlite3.connect("shellhub.db") as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         c.execute("""CREATE TABLE IF NOT EXISTS sessions (
             id TEXT PRIMARY KEY, remote_addr TEXT, name TEXT DEFAULT '',
@@ -40,12 +44,12 @@ def init_db():
         )""")
 
 def save_session(sid, addr, created):
-    with sqlite3.connect("shellhub.db") as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         conn.execute("INSERT INTO sessions (id, remote_addr, created_at, last_seen) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET last_seen = excluded.last_seen",
                      (sid, addr, created, time.time()))
 
 def get_session_meta(sid):
-    with sqlite3.connect("shellhub.db") as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         row = conn.execute("SELECT name, notes, flags FROM sessions WHERE id = ?", (sid,)).fetchone()
     if row:
         return {"name": row[0] or "", "notes": row[1] or "", "flags": row[2] or ""}
@@ -54,16 +58,16 @@ def get_session_meta(sid):
 def update_session_meta(sid, field, value):
     if field not in VALID_META_FIELDS:
         return
-    with sqlite3.connect("shellhub.db") as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         conn.execute(f"UPDATE sessions SET {field} = ?, last_seen = ? WHERE id = ?", (value, time.time(), sid))
 
 def save_command(sid, typ, data):
-    with sqlite3.connect("shellhub.db") as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         conn.execute("INSERT INTO commands (session_id, type, data, timestamp) VALUES (?, ?, ?, ?)",
                      (sid, typ, data, time.time()))
 
 def get_history(sid):
-    with sqlite3.connect("shellhub.db") as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         rows = conn.execute("SELECT type, data FROM commands WHERE session_id = ? ORDER BY id LIMIT 50000", (sid,)).fetchall()
     return rows
 
@@ -92,7 +96,7 @@ async def handle_tcp(reader, writer):
     created = time.time()
 
     session = {"id": sid, "addr": addr_str, "reader": reader,
-               "writer": writer, "created": created, "raw_mode": False}
+               "writer": writer, "created": created, "raw_mode": False, "output_raw": False}
     tcp_sessions[sid] = session
     save_session(sid, addr_str, created)
     await broadcast_sessions()
@@ -103,14 +107,21 @@ async def handle_tcp(reader, writer):
             if not data:
                 break
             raw = data.decode("utf-8", errors="replace")
-            text = clean_output(raw)
+            if session.get("output_raw"):
+                text = raw
+            else:
+                text = clean_output(raw)
             save_command(sid, "output", raw)
+            dead = []
             for ws in list(admin_connections):
                 if getattr(ws, "watching", None) == sid:
                     try:
                         await ws.send_json({"type": "output", "session_id": sid, "data": text})
                     except Exception as e:
+                        dead.append(ws)
                         log.debug("ws send failed: %s", e)
+            for ws in dead:
+                admin_connections.discard(ws)
     except asyncio.CancelledError:
         pass
     except Exception as e:
@@ -127,11 +138,12 @@ async def handle_tcp(reader, writer):
 @asynccontextmanager
 async def lifespan(app):
     init_db()
-    server = await asyncio.start_server(handle_tcp, "0.0.0.0", 4444)
+    server = await asyncio.start_server(handle_tcp, CFG_TCP_HOST, CFG_TCP_PORT)
     task = asyncio.create_task(server.serve_forever())
     yield
     task.cancel()
     server.close()
+    await server.wait_closed()
 
 app = FastAPI(lifespan=lifespan)
 
@@ -181,7 +193,9 @@ async def ws_endpoint(ws: WebSocket):
             elif t == "raw_mode":
                 s = tcp_sessions.get(msg.get("session_id"))
                 if s:
-                    s["raw_mode"] = msg.get("data", False)
+                    val = msg.get("data", False)
+                    s["raw_mode"] = val
+                    s["output_raw"] = val
             elif t == "pty_spawn":
                 s = tcp_sessions.get(msg.get("session_id"))
                 if s:
@@ -213,4 +227,4 @@ async def cheatsheet():
     return FileResponse(os.path.join(BASE_DIR, "static", "cheatsheet.html"))
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8080)
+    uvicorn.run(app, host=CFG_HOST, port=CFG_PORT)

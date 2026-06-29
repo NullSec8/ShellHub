@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <title>ShellHub</title>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm/css/xterm.min.css">
+<link rel="stylesheet" href="/xterm.min.css">
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { font-family: 'Segoe UI', sans-serif; background: #0d1117; color: #c9d1d9; height: 100vh; display: flex; flex-direction: column; }
@@ -86,8 +86,8 @@ header span { color: #8b949e; font-size: 13px; }
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/xterm/lib/xterm.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit/lib/xterm-addon-fit.min.js"></script>
+<script src="/xterm.min.js"></script>
+<script src="/xterm-addon-fit.min.js"></script>
 <script>
 const termEl = document.getElementById('terminal');
 const placeholder = document.getElementById('placeholder');
@@ -112,13 +112,19 @@ let pageAlive = true;
 
 window.addEventListener('beforeunload', () => { pageAlive = false; });
 
+function getWsToken() {
+  return new URLSearchParams(location.search).get('token') || localStorage.getItem('shellhub_token') || '';
+}
+
 function connect() {
   if (!pageAlive) return;
   const id = ++wsId;
   dot.className = 'dot offline';
   statustxt.textContent = 'connecting...';
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const newWs = new WebSocket(`${proto}//${location.host}/ws`);
+  const token = getWsToken();
+  const url = token ? `${proto}//${location.host}/ws?token=${encodeURIComponent(token)}` : `${proto}//${location.host}/ws`;
+  const newWs = new WebSocket(url);
   ws = newWs;
 
   newWs.onopen = () => {

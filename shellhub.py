@@ -15,12 +15,14 @@ log = logging.getLogger("shellhub")
 
 tcp_sessions = {}
 admin_connections = set()
+tcp_tasks = set()
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "shellhub.db")
 CFG_HOST = os.environ.get("SHELLHUB_HOST", "0.0.0.0")
 CFG_PORT = int(os.environ.get("SHELLHUB_PORT", "8080"))
 CFG_TCP_HOST = os.environ.get("SHELLHUB_TCP_HOST", "0.0.0.0")
 CFG_TCP_PORT = int(os.environ.get("SHELLHUB_TCP_PORT", "4444"))
+CFG_TOKEN = os.environ.get("SHELLHUB_TOKEN", "")
 
 CONTROL_RE = re.compile(r"[\x00\x07\x0b\x0c\x0e-\x1a\x1c-\x1f\x7f]")
 
@@ -100,6 +102,8 @@ async def broadcast_sessions():
         admin_connections.discard(ws)
 
 async def handle_tcp(reader, writer):
+    task = asyncio.current_task()
+    tcp_tasks.add(task)
     sid = uuid.uuid4().hex[:8]
     addr = writer.get_extra_info("peername")
     addr_str = f"{addr[0]}:{addr[1]}"
@@ -144,14 +148,19 @@ async def handle_tcp(reader, writer):
             pass
         tcp_sessions.pop(sid, None)
         await broadcast_sessions()
+        tcp_tasks.discard(task)
 
 @asynccontextmanager
 async def lifespan(app):
     init_db()
     server = await asyncio.start_server(handle_tcp, CFG_TCP_HOST, CFG_TCP_PORT)
-    task = asyncio.create_task(server.serve_forever())
+    serve_task = asyncio.create_task(server.serve_forever())
     yield
-    task.cancel()
+    serve_task.cancel()
+    for t in list(tcp_tasks):
+        t.cancel()
+    if tcp_tasks:
+        await asyncio.gather(*tcp_tasks, return_exceptions=True)
     server.close()
     await server.wait_closed()
 
@@ -159,6 +168,11 @@ app = FastAPI(lifespan=lifespan)
 
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket):
+    if CFG_TOKEN:
+        token = ws.query_params.get("token", "")
+        if token != CFG_TOKEN:
+            await ws.close(code=4001, reason="unauthorized")
+            return
     await ws.accept()
     ws.watching = None
     admin_connections.add(ws)
